@@ -38,11 +38,14 @@ class WuerfelplanApp {
       imgSrc: null, imgW: 0, imgH: 0,
       cols: 32, diceMm: 16, style: 'white',
       brightness: 0, contrast: 100, invert: false, rotate: true,
-      view: 'preview', row: 0, done: []
+      view: 'preview', row: 0, done: [],
+      crop: { x: 0, y: 0, w: 1, h: 1 }
     };
     this._img = null;
     this._gridKey = null;
     this._grid = null;
+    this._cropDraft = null;
+    this._cropDrag = null;
 
     this.cacheDom();
     this.bindEvents();
@@ -56,9 +59,13 @@ class WuerfelplanApp {
       sidebarToggle: $('sidebarToggle'), sidebar: $('sidebar'),
       dropzone: $('dropzone'), fileInput: $('fileInput'),
       thumbWrap: $('thumbWrap'), thumb: $('thumb'), dropLabel: $('dropLabel'),
+      thumbCropRect: $('thumbCropRect'),
+      cropBtn: $('cropBtn'), cropHint: $('cropHint'),
+      cropModal: $('cropModal'), cropStage: $('cropStage'), cropImg: $('cropImg'), cropSelect: $('cropSelect'),
+      cropCancelBtn: $('cropCancelBtn'), cropResetBtn: $('cropResetBtn'), cropApplyBtn: $('cropApplyBtn'),
       colsRange: $('colsRange'), colsVal: $('colsVal'), gridHintCols: $('gridHintCols'),
       diceMmRange: $('diceMmRange'), diceMmVal: $('diceMmVal'),
-      styleWhite: $('styleWhite'), styleMixed: $('styleMixed'),
+      styleWhite: $('styleWhite'), styleBlack: $('styleBlack'), styleMixed: $('styleMixed'),
       rotateBtn: $('rotateBtn'),
       brightnessRange: $('brightnessRange'), brightnessVal: $('brightnessVal'),
       contrastRange: $('contrastRange'), contrastVal: $('contrastVal'),
@@ -105,6 +112,7 @@ class WuerfelplanApp {
     d.colsRange.addEventListener('input', e => this.setState({ cols: +e.target.value, row: 0 }));
     d.diceMmRange.addEventListener('input', e => this.setState({ diceMm: +e.target.value }));
     d.styleWhite.addEventListener('change', () => this.setState({ style: 'white' }));
+    d.styleBlack.addEventListener('change', () => this.setState({ style: 'black' }));
     d.styleMixed.addEventListener('change', () => this.setState({ style: 'mixed' }));
     d.rotateBtn.addEventListener('click', () => this.setState({ rotate: !this.state.rotate }));
     d.brightnessRange.addEventListener('input', e => this.setState({ brightness: +e.target.value }));
@@ -113,6 +121,19 @@ class WuerfelplanApp {
     d.resetBtn.addEventListener('click', () => this.setState({
       cols: 32, diceMm: 16, style: 'white', brightness: 0, contrast: 100, invert: false, row: 0
     }));
+
+    d.cropBtn.addEventListener('click', () => this.openCropModal());
+    d.cropCancelBtn.addEventListener('click', () => this.closeCropModal());
+    d.cropResetBtn.addEventListener('click', () => {
+      this._cropDraft = { x: 0, y: 0, w: 1, h: 1 };
+      this.paintCropSelect();
+    });
+    d.cropApplyBtn.addEventListener('click', () => {
+      this.setState({ crop: this._cropDraft, row: 0 });
+      this.closeCropModal();
+    });
+    d.cropModal.addEventListener('click', e => { if (e.target === d.cropModal) this.closeCropModal(); });
+    this.bindCropDrag();
 
     d.tabPreview.addEventListener('click', () => this.setState({ view: 'preview' }));
     d.tabPlan.addEventListener('click', () => this.setState({ view: 'plan' }));
@@ -145,7 +166,11 @@ class WuerfelplanApp {
     } catch (e) { /* ignore */ }
   }
 
-  sig() { return this.state.cols + 'x' + this.rows() + '|' + this.state.style; }
+  sig() {
+    const c = this.state.crop;
+    const cropSig = [c.x, c.y, c.w, c.h].map(n => n.toFixed(3)).join(',');
+    return this.state.cols + 'x' + this.rows() + '|' + this.state.style + '|' + cropSig;
+  }
 
   saveProgress(done) {
     try { localStorage.setItem(PROGRESS_KEY, JSON.stringify({ sig: this.sig(), done })); } catch (e) { /* ignore */ }
@@ -159,7 +184,10 @@ class WuerfelplanApp {
       const img = new Image();
       img.onload = () => {
         this._img = img;
-        this.setState({ imgSrc: e.target.result, imgW: img.width, imgH: img.height, row: 0 });
+        this.setState({
+          imgSrc: e.target.result, imgW: img.width, imgH: img.height, row: 0,
+          crop: { x: 0, y: 0, w: 1, h: 1 }
+        });
       };
       img.src = e.target.result;
     };
@@ -167,10 +195,19 @@ class WuerfelplanApp {
   }
 
   // ---------- grid ----------
+  cropPx() {
+    const { imgW, imgH, crop } = this.state;
+    return {
+      x: Math.round(imgW * crop.x), y: Math.round(imgH * crop.y),
+      w: Math.max(1, Math.round(imgW * crop.w)), h: Math.max(1, Math.round(imgH * crop.h))
+    };
+  }
+
   rows() {
-    const { imgW, imgH, cols } = this.state;
+    const { imgW, cols } = this.state;
     if (!imgW) return Math.round(cols * 1.25);
-    return Math.max(1, Math.round(cols * imgH / imgW));
+    const { w, h } = this.cropPx();
+    return Math.max(1, Math.round(cols * h / w));
   }
 
   levels() { return this.state.style === 'mixed' ? 12 : 6; }
@@ -178,20 +215,23 @@ class WuerfelplanApp {
   grid() {
     if (!this._img) return null;
     const cols = this.state.cols, rows = this.rows();
-    const key = [cols, rows, this.state.style, this.state.brightness, this.state.contrast, this.state.invert, this.state.rotate, this.state.imgSrc].join('|');
+    const crop = this.state.crop;
+    const key = [cols, rows, this.state.style, this.state.brightness, this.state.contrast, this.state.invert, this.state.rotate, this.state.imgSrc, crop.x, crop.y, crop.w, crop.h].join('|');
     if (this._gridKey === key) return this._grid;
+
+    const src = this.cropPx();
 
     const c = document.createElement('canvas');
     c.width = cols; c.height = rows;
     const ctx = c.getContext('2d');
-    ctx.drawImage(this._img, 0, 0, cols, rows);
+    ctx.drawImage(this._img, src.x, src.y, src.w, src.h, 0, 0, cols, rows);
     const data = ctx.getImageData(0, 0, cols, rows).data;
 
     // double-resolution sample: 2×2 sub-luminance per cell, used to orient asymmetric faces
     const c2 = document.createElement('canvas');
     c2.width = cols * 2; c2.height = rows * 2;
     const ctx2 = c2.getContext('2d');
-    ctx2.drawImage(this._img, 0, 0, cols * 2, rows * 2);
+    ctx2.drawImage(this._img, src.x, src.y, src.w, src.h, 0, 0, cols * 2, rows * 2);
     const data2 = ctx2.getImageData(0, 0, cols * 2, rows * 2).data;
     const lum2 = (x, y) => { const i = (y * cols * 2 + x) * 4; return 0.299 * data2[i] + 0.587 * data2[i + 1] + 0.114 * data2[i + 2]; };
 
@@ -210,7 +250,16 @@ class WuerfelplanApp {
         v = Math.max(0, Math.min(255, v));
         let idx = Math.floor((255 - v) / 256 * L);
         idx = Math.max(0, Math.min(L - 1, idx));
-        const cell = idx < 6 ? { v: idx + 1, black: false, rot: 0 } : { v: 12 - idx, black: true, rot: 0 };
+        let cell;
+        if (this.state.style === 'mixed') {
+          // bright half → white die (more black pips = darker), dark half → black die (fewer white pips = darker)
+          cell = idx < 6 ? { v: idx + 1, black: false, rot: 0 } : { v: 12 - idx, black: true, rot: 0 };
+        } else if (this.state.style === 'black') {
+          // black die only: brighter pixel → more white pips
+          cell = { v: L - idx, black: true, rot: 0 };
+        } else {
+          cell = { v: idx + 1, black: false, rot: 0 };
+        }
         if (this.state.rotate && ASYM[cell.v]) {
           const q = [lum2(x * 2, y * 2), lum2(x * 2 + 1, y * 2), lum2(x * 2, y * 2 + 1), lum2(x * 2 + 1, y * 2 + 1)];
           let dark = q.map(l => cell.black ? l : 255 - l);
@@ -299,6 +348,96 @@ class WuerfelplanApp {
     this.setState({ done: next, row: advance && !isDone ? Math.min(rows - 1, rIdx + 1) : rIdx });
   }
 
+  // ---------- crop modal ----------
+  openCropModal() {
+    const d = this.dom;
+    this._cropDraft = { ...this.state.crop };
+    d.cropImg.src = this.state.imgSrc;
+    d.cropStage.style.aspectRatio = this.state.imgW + ' / ' + this.state.imgH;
+    d.cropModal.hidden = false;
+    this.paintCropSelect();
+  }
+
+  closeCropModal() {
+    this.dom.cropModal.hidden = true;
+    this._cropDraft = null;
+  }
+
+  paintCropSelect() {
+    const c = this._cropDraft;
+    if (!c) return;
+    const el = this.dom.cropSelect;
+    el.style.left = (c.x * 100) + '%';
+    el.style.top = (c.y * 100) + '%';
+    el.style.width = (c.w * 100) + '%';
+    el.style.height = (c.h * 100) + '%';
+  }
+
+  cropStageFrac(clientX, clientY) {
+    const rect = this.dom.cropStage.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+    };
+  }
+
+  bindCropDrag() {
+    const d = this.dom;
+    const MIN = 0.06;
+
+    const onMove = e => {
+      const drag = this._cropDrag;
+      if (!drag) return;
+      const p = this.cropStageFrac(e.clientX, e.clientY);
+      const c = this._cropDraft;
+
+      if (drag.mode === 'move') {
+        const dx = p.x - drag.startX, dy = p.y - drag.startY;
+        c.x = Math.max(0, Math.min(1 - drag.startW, drag.origX + dx));
+        c.y = Math.max(0, Math.min(1 - drag.startH, drag.origY + dy));
+      } else {
+        let cx = p.x, cy = p.y;
+        if (drag.dirX > 0) cx = Math.max(cx, drag.anchorX + MIN); else cx = Math.min(cx, drag.anchorX - MIN);
+        if (drag.dirY > 0) cy = Math.max(cy, drag.anchorY + MIN); else cy = Math.min(cy, drag.anchorY - MIN);
+        cx = Math.max(0, Math.min(1, cx)); cy = Math.max(0, Math.min(1, cy));
+        c.x = Math.min(drag.anchorX, cx); c.w = Math.abs(cx - drag.anchorX);
+        c.y = Math.min(drag.anchorY, cy); c.h = Math.abs(cy - drag.anchorY);
+      }
+      this.paintCropSelect();
+    };
+
+    const onUp = () => { this._cropDrag = null; };
+
+    d.cropSelect.addEventListener('pointerdown', e => {
+      if (e.target.closest('.crop-handle')) return;
+      e.preventDefault();
+      const c = this._cropDraft;
+      const p = this.cropStageFrac(e.clientX, e.clientY);
+      this._cropDrag = { mode: 'move', startX: p.x, startY: p.y, origX: c.x, origY: c.y, startW: c.w, startH: c.h };
+      d.cropStage.setPointerCapture(e.pointerId);
+    });
+
+    d.cropSelect.querySelectorAll('.crop-handle').forEach(handle => {
+      handle.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const h = handle.dataset.handle;
+        const c = this._cropDraft;
+        const dirX = (h === 'ne' || h === 'se') ? 1 : -1;
+        const dirY = (h === 'sw' || h === 'se') ? 1 : -1;
+        this._cropDrag = {
+          mode: 'resize', dirX, dirY,
+          anchorX: dirX > 0 ? c.x : c.x + c.w,
+          anchorY: dirY > 0 ? c.y : c.y + c.h
+        };
+        d.cropStage.setPointerCapture(e.pointerId);
+      });
+    });
+
+    d.cropStage.addEventListener('pointermove', onMove);
+    d.cropStage.addEventListener('pointerup', onUp);
+    d.cropStage.addEventListener('pointercancel', onUp);
+  }
+
   // ---------- render (DOM bindings) ----------
   render() {
     const st = this.state;
@@ -314,9 +453,22 @@ class WuerfelplanApp {
       if (d.thumb.src !== st.imgSrc) d.thumb.src = st.imgSrc;
       d.thumbWrap.hidden = false;
       d.dropLabel.textContent = 'Anderes Bild wählen';
+      d.cropBtn.hidden = false;
+      const isFullCrop = st.crop.x === 0 && st.crop.y === 0 && st.crop.w === 1 && st.crop.h === 1;
+      d.thumbCropRect.hidden = isFullCrop;
+      if (!isFullCrop) {
+        d.thumbCropRect.style.left = (st.crop.x * 100) + '%';
+        d.thumbCropRect.style.top = (st.crop.y * 100) + '%';
+        d.thumbCropRect.style.width = (st.crop.w * 100) + '%';
+        d.thumbCropRect.style.height = (st.crop.h * 100) + '%';
+      }
+      d.cropHint.hidden = false;
+      d.cropHint.textContent = isFullCrop ? 'Ausschnitt: ganzes Bild' : 'Ausschnitt: ' + Math.round(st.crop.w * 100) + '% × ' + Math.round(st.crop.h * 100) + '%';
     } else {
       d.thumbWrap.hidden = true;
       d.dropLabel.textContent = 'Bild hierher ziehen oder klicken';
+      d.cropBtn.hidden = true;
+      d.cropHint.hidden = true;
     }
     d.statusLine.textContent = g ? total.toLocaleString('de-DE') + ' Würfel · ' + cols + '×' + rows : 'Kein Bild geladen';
 
@@ -329,6 +481,7 @@ class WuerfelplanApp {
 
     // 03 — Material
     d.styleWhite.checked = st.style === 'white';
+    d.styleBlack.checked = st.style === 'black';
     d.styleMixed.checked = st.style === 'mixed';
     d.rotateBtn.textContent = st.rotate ? 'Drehung wird geplant — abschalten' : 'Würfel-Drehung mitplanen';
     d.rotateBtn.classList.toggle('is-active', st.rotate);

@@ -40,11 +40,14 @@
       <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Bild auswählen">
         <div class="dropzone-thumb-wrap" id="thumbWrap" hidden>
           <img id="thumb" class="dropzone-thumb" alt="Vorlage">
+          <div class="thumb-crop-rect" id="thumbCropRect" hidden></div>
         </div>
         <div class="dropzone-label" id="dropLabel">Bild hierher ziehen oder klicken</div>
         <div class="dropzone-hint">JPG oder PNG. Nichts wird hochgeladen — alles läuft im Browser.</div>
       </div>
       <input type="file" accept="image/*" id="fileInput" hidden>
+      <button class="btn btn-secondary btn-block" id="cropBtn" type="button" hidden>Ausschnitt anpassen</button>
+      <div class="field-hint" id="cropHint" hidden></div>
     </section>
 
     <section class="group">
@@ -66,6 +69,10 @@
         <label class="radio">
           <input type="radio" name="dicestyle" id="styleWhite" checked><span class="dot"></span>
           Weiße Würfel — 6 Stufen
+        </label>
+        <label class="radio">
+          <input type="radio" name="dicestyle" id="styleBlack"><span class="dot"></span>
+          Schwarze Würfel — 6 Stufen
         </label>
         <label class="radio">
           <input type="radio" name="dicestyle" id="styleMixed"><span class="dot"></span>
@@ -155,6 +162,29 @@
     </section>
 
   </main>
+</div>
+
+<div class="crop-modal" id="cropModal" hidden>
+  <div class="crop-modal-inner">
+    <div class="crop-modal-head">
+      <div class="crop-modal-title">Ausschnitt wählen</div>
+      <button class="btn btn-ghost" id="cropCancelBtn" type="button">Abbrechen ✕</button>
+    </div>
+    <div class="crop-stage" id="cropStage">
+      <img id="cropImg" class="crop-img" alt="Zuschneiden" draggable="false">
+      <div class="crop-select" id="cropSelect">
+        <div class="crop-handle" data-handle="nw"></div>
+        <div class="crop-handle" data-handle="ne"></div>
+        <div class="crop-handle" data-handle="sw"></div>
+        <div class="crop-handle" data-handle="se"></div>
+      </div>
+    </div>
+    <div class="crop-modal-actions">
+      <button class="btn btn-secondary" id="cropResetBtn" type="button">Ganzes Bild</button>
+      <span class="spacer"></span>
+      <button class="btn btn-done" id="cropApplyBtn" type="button">Übernehmen ✓</button>
+    </div>
+  </div>
 </div>
 
 <script src="app.js"></script>
