@@ -1,4 +1,4 @@
-const CACHE = 'wuerfelplan-v1';
+const CACHE = 'wuerfelplan-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -24,21 +24,21 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Cache-first for same-origin app shell, network passthrough for everything else (e.g. Google Fonts).
+// Network-first for the same-origin app shell, so a deployed update is picked
+// up on the next load instead of being masked by a stale cache forever; the
+// cache is only used as an offline fallback. Cross-origin requests (Google
+// Fonts) pass straight through.
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(res => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE).then(cache => cache.put(event.request, clone));
-        }
-        return res;
-      }).catch(() => cached);
-    })
+    fetch(event.request).then(res => {
+      if (res.ok) {
+        const clone = res.clone();
+        caches.open(CACHE).then(cache => cache.put(event.request, clone));
+      }
+      return res;
+    }).catch(() => caches.match(event.request))
   );
 });
