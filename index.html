@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Würfelplan</title>
+<meta name="description" content="Bild in einen Würfelmosaik-Bauplan verwandeln — läuft komplett offline im Browser.">
+<meta name="theme-color" content="#ec3013">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Würfelplan">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="nav">
+  <span class="nav-brand">WÜRFELPLAN</span>
+  <span class="nav-sub">Bild → Würfelmosaik</span>
+  <span class="spacer"></span>
+  <span class="nav-status" id="statusLine">Kein Bild geladen</span>
+</div>
+
+<div class="shell">
+
+  <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-expanded="false" aria-controls="sidebar">
+    <span>Einstellungen</span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+
+  <aside class="sidebar" id="sidebar">
+
+    <section class="group">
+      <div class="kicker">01 — Vorlage</div>
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Bild auswählen">
+        <div class="dropzone-thumb-wrap" id="thumbWrap" hidden>
+          <img id="thumb" class="dropzone-thumb" alt="Vorlage">
+        </div>
+        <div class="dropzone-label" id="dropLabel">Bild hierher ziehen oder klicken</div>
+        <div class="dropzone-hint">JPG oder PNG. Nichts wird hochgeladen — alles läuft im Browser.</div>
+      </div>
+      <input type="file" accept="image/*" id="fileInput" hidden>
+    </section>
+
+    <section class="group">
+      <div class="kicker">02 — Genauigkeit</div>
+      <div class="field">
+        <label><span>Würfel pro Reihe</span><span class="field-val" id="colsVal">32</span></label>
+        <input type="range" min="8" max="80" step="1" value="32" id="colsRange">
+        <div class="field-hint" id="gridHintCols">32 × 40</div>
+      </div>
+      <div class="field">
+        <label><span>Würfelkante</span><span class="field-val" id="diceMmVal">16 mm</span></label>
+        <input type="range" min="8" max="30" step="1" value="16" id="diceMmRange">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="kicker">03 — Material</div>
+      <div class="radio-list">
+        <label class="radio">
+          <input type="radio" name="dicestyle" id="styleWhite" checked><span class="dot"></span>
+          Weiße Würfel — 6 Stufen
+        </label>
+        <label class="radio">
+          <input type="radio" name="dicestyle" id="styleMixed"><span class="dot"></span>
+          Weiß + schwarz — 12 Stufen
+        </label>
+      </div>
+      <button class="btn btn-secondary btn-block" id="rotateBtn" type="button">Drehung wird geplant — abschalten</button>
+      <div class="field-hint">Die Augenzahlen 2, 3 und 6 werden so gedreht, dass ihre Augen der hellen bzw. dunklen Seite der Bildzelle folgen.</div>
+    </section>
+
+    <section class="group">
+      <div class="kicker">04 — Bildkorrektur</div>
+      <div class="field">
+        <label><span>Helligkeit</span><span class="field-val" id="brightnessVal">0</span></label>
+        <input type="range" min="-80" max="80" step="1" value="0" id="brightnessRange">
+      </div>
+      <div class="field">
+        <label><span>Kontrast</span><span class="field-val" id="contrastVal">100 %</span></label>
+        <input type="range" min="50" max="220" step="5" value="100" id="contrastRange">
+      </div>
+      <button class="btn btn-secondary btn-block" id="invertBtn" type="button">Hell/Dunkel tauschen</button>
+    </section>
+
+    <button class="btn btn-secondary btn-block" id="resetBtn" type="button">Einstellungen zurücksetzen</button>
+  </aside>
+
+  <main class="main">
+
+    <div class="main-head">
+      <h1>Mosaik-Vorschau</h1>
+      <div class="tabs">
+        <button class="btn btn-secondary tab" id="tabPreview" type="button">Vorschau</button>
+        <button class="btn btn-secondary tab" id="tabPlan" type="button">Bauplan</button>
+      </div>
+    </div>
+
+    <section class="view" id="viewPreview">
+      <div class="canvas-frame">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <div class="kicker">Würfel gesamt</div>
+          <div class="stat-val" id="statTotal">—</div>
+        </div>
+        <div class="stat">
+          <div class="kicker">Raster</div>
+          <div class="stat-val" id="statGrid">—</div>
+        </div>
+        <div class="stat">
+          <div class="kicker">Rahmen innen</div>
+          <div class="stat-val" id="statFrame">—</div>
+        </div>
+        <div class="stat">
+          <div class="kicker">Gewicht ca.</div>
+          <div class="stat-val" id="statWeight">—</div>
+        </div>
+      </div>
+      <div class="parts-wrap">
+        <div class="kicker">Stückliste</div>
+        <div class="parts" id="partsList"></div>
+      </div>
+    </section>
+
+    <section class="view" id="viewPlan" hidden>
+      <div class="plan-bar">
+        <button class="btn btn-secondary btn-nav" id="prevRowBtn" type="button" aria-label="Vorherige Reihe">◀</button>
+        <div class="row-label" id="rowLabel">Reihe 1 von 1</div>
+        <button class="btn btn-secondary btn-nav" id="nextRowBtn" type="button" aria-label="Nächste Reihe">▶</button>
+        <button class="btn btn-done" id="markDoneBtn" type="button">Reihe abhaken ▶</button>
+        <span class="spacer"></span>
+        <div class="progress-label" id="progressLabel"></div>
+        <button class="btn btn-ghost" id="resetProgressBtn" type="button">Fortschritt löschen</button>
+      </div>
+
+      <div class="row-cells" id="rowCells"></div>
+
+      <div class="row-text-wrap">
+        <div class="kicker">Reihe als Text</div>
+        <div class="row-text" id="rowText"></div>
+      </div>
+
+      <div class="mini-wrap">
+        <div class="kicker">Position im Bild</div>
+        <canvas id="miniCanvas"></canvas>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
